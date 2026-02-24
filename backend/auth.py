@@ -1,35 +1,50 @@
 """
 WASTE IQ – Firebase Authentication & Authorization
 Verifies Firebase ID tokens and enforces role-based access.
+Render-safe (uses full JSON from environment variable)
 """
 
 import os
+import json
 from typing import Optional, List
+
 import firebase_admin
 from firebase_admin import credentials, auth as firebase_auth
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 
 
-# ── Firebase Admin SDK Init (ENV-BASED FOR RENDER) ───────────────────────────
+# ─────────────────────────────────────────────────────────────
+# Firebase Admin SDK Init (FULL JSON FROM ENV)
+# ─────────────────────────────────────────────────────────────
 def _init_firebase():
     if not firebase_admin._apps:
-        cred = credentials.Certificate({
-            "type": "service_account",
-            "project_id": os.getenv("FIREBASE_PROJECT_ID"),
-            "private_key": os.getenv("FIREBASE_PRIVATE_KEY").replace("\\n", "\n"),
-            "client_email": os.getenv("FIREBASE_CLIENT_EMAIL"),
-        })
+        firebase_json = os.getenv("FIREBASE_SERVICE_ACCOUNT_JSON")
+
+        if not firebase_json:
+            raise RuntimeError("FIREBASE_SERVICE_ACCOUNT_JSON not set")
+
+        try:
+            cred_dict = json.loads(firebase_json)
+        except Exception:
+            raise RuntimeError("Invalid FIREBASE_SERVICE_ACCOUNT_JSON format")
+
+        cred = credentials.Certificate(cred_dict)
         firebase_admin.initialize_app(cred)
+
 
 _init_firebase()
 
 
-# ── HTTP Bearer auth scheme ───────────────────────────────────────────────────
+# ─────────────────────────────────────────────────────────────
+# HTTP Bearer Scheme
+# ─────────────────────────────────────────────────────────────
 security = HTTPBearer(auto_error=False)
 
 
-# ── Token Verification ────────────────────────────────────────────────────────
+# ─────────────────────────────────────────────────────────────
+# User Object
+# ─────────────────────────────────────────────────────────────
 class UserInfo:
     def __init__(self, uid: str, email: str, role: str, name: str = ""):
         self.uid = uid
@@ -41,6 +56,9 @@ class UserInfo:
         return f"<UserInfo uid={self.uid} role={self.role}>"
 
 
+# ─────────────────────────────────────────────────────────────
+# Verify Firebase ID Token
+# ─────────────────────────────────────────────────────────────
 async def get_current_user(
     credentials: Optional[HTTPAuthorizationCredentials] = Depends(security)
 ) -> UserInfo:
@@ -71,7 +89,9 @@ async def get_current_user(
     return UserInfo(uid=uid, email=email, role=role, name=name)
 
 
-# ── Role Dependency Factories ─────────────────────────────────────────────────
+# ─────────────────────────────────────────────────────────────
+# Role Guards
+# ─────────────────────────────────────────────────────────────
 def require_roles(allowed_roles: List[str]):
     async def _check(user: UserInfo = Depends(get_current_user)) -> UserInfo:
         if user.role not in allowed_roles:
@@ -90,7 +110,9 @@ require_driver = require_roles(["admin", "driver"])
 require_any_auth = require_roles(["admin", "municipal", "driver", "household"])
 
 
-# ── Set Custom Role Claim ─────────────────────────────────────────────────────
+# ─────────────────────────────────────────────────────────────
+# Admin Utilities
+# ─────────────────────────────────────────────────────────────
 def set_user_role(uid: str, role: str) -> None:
     valid_roles = {"household", "municipal", "driver", "admin"}
     if role not in valid_roles:
@@ -98,7 +120,6 @@ def set_user_role(uid: str, role: str) -> None:
     firebase_auth.set_custom_user_claims(uid, {"role": role})
 
 
-# ── Admin: Create User ────────────────────────────────────────────────────────
 def create_user(email: str, password: str, display_name: str) -> str:
     user = firebase_auth.create_user(
         email=email,
@@ -109,7 +130,6 @@ def create_user(email: str, password: str, display_name: str) -> str:
     return user.uid
 
 
-# ── Admin: List Users ─────────────────────────────────────────────────────────
 def list_all_users():
     users = []
     page = firebase_auth.list_users()
@@ -132,6 +152,5 @@ def list_all_users():
     return users
 
 
-# ── Admin: Disable/Enable User ────────────────────────────────────────────────
 def set_user_disabled(uid: str, disabled: bool) -> None:
     firebase_auth.update_user(uid, disabled=disabled)
