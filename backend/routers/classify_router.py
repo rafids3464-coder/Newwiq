@@ -1,3 +1,13 @@
+"""WASTE IQ – Classification Router"""
+
+from fastapi import APIRouter, Depends, UploadFile, File, HTTPException, Request
+from auth import get_current_user, UserInfo
+from firestore_client import query_collection
+from models import APIResponse
+
+router = APIRouter()   # ← MUST BE BEFORE ANY @router decorators
+
+
 @router.post("/", response_model=APIResponse)
 async def classify_waste(
     request: Request,
@@ -17,7 +27,7 @@ async def classify_waste(
     if classifier is None:
         raise HTTPException(
             status_code=503,
-            detail="AI model not loaded. Backend warming up. Try again in 30 seconds."
+            detail="AI model not loaded. Backend warming up."
         )
 
     try:
@@ -37,4 +47,41 @@ async def classify_waste(
         )
 
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Classification failed: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/history", response_model=APIResponse)
+async def classification_history(
+    limit: int = 50,
+    user: UserInfo = Depends(get_current_user)
+):
+    filters = [] if user.role == "admin" else [("uid", "==", user.uid)]
+
+    logs = query_collection(
+        "waste_logs",
+        filters=filters if filters else None,
+    )
+
+    logs.sort(key=lambda x: x.get("timestamp", ""), reverse=True)
+    logs = logs[:limit]
+
+    return APIResponse(success=True, message=f"{len(logs)} records", data=logs)
+
+
+@router.get("/stats", response_model=APIResponse)
+async def classification_stats(user: UserInfo = Depends(get_current_user)):
+    filters = [] if user.role in ("admin", "municipal") else [("uid", "==", user.uid)]
+
+    logs = query_collection("waste_logs", filters=filters if filters else None)
+
+    from collections import Counter
+    categories = Counter(l.get("waste_category", "Unknown") for l in logs)
+
+    return APIResponse(
+        success=True,
+        message="Stats computed",
+        data={
+            "total_classifications": len(logs),
+            "by_category": dict(categories),
+        },
+    )
