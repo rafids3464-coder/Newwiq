@@ -3,6 +3,7 @@ WASTE IQ – Firebase Authentication & Authorization
 Verifies Firebase ID tokens and enforces role-based access.
 """
 
+import os
 from typing import Optional, List
 import firebase_admin
 from firebase_admin import credentials, auth as firebase_auth
@@ -10,10 +11,15 @@ from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 
 
-# ── Firebase Admin SDK Init (FORCE firebase_key.json) ────────────────────────
+# ── Firebase Admin SDK Init (ENV-BASED FOR RENDER) ───────────────────────────
 def _init_firebase():
     if not firebase_admin._apps:
-        cred = credentials.Certificate("firebase_key.json")
+        cred = credentials.Certificate({
+            "type": "service_account",
+            "project_id": os.getenv("FIREBASE_PROJECT_ID"),
+            "private_key": os.getenv("FIREBASE_PRIVATE_KEY").replace("\\n", "\n"),
+            "client_email": os.getenv("FIREBASE_CLIENT_EMAIL"),
+        })
         firebase_admin.initialize_app(cred)
 
 _init_firebase()
@@ -38,7 +44,6 @@ class UserInfo:
 async def get_current_user(
     credentials: Optional[HTTPAuthorizationCredentials] = Depends(security)
 ) -> UserInfo:
-    """Verify Firebase ID token and return UserInfo."""
 
     if credentials is None:
         raise HTTPException(
@@ -60,7 +65,7 @@ async def get_current_user(
 
     uid = decoded.get("uid", "")
     email = decoded.get("email", "")
-    role = decoded.get("role", "household")  # custom claim
+    role = decoded.get("role", "household")
     name = decoded.get("name", "")
 
     return UserInfo(uid=uid, email=email, role=role, name=name)
