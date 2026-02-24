@@ -20,9 +20,9 @@ st.set_page_config(
 # ─────────────────────────────────────────────
 # Ensure frontend directory is importable
 # ─────────────────────────────────────────────
-_HERE = Path(__file__).parent
-if str(_HERE) not in sys.path:
-    sys.path.insert(0, str(_HERE))
+HERE = Path(__file__).parent
+if str(HERE) not in sys.path:
+    sys.path.insert(0, str(HERE))
 
 # ─────────────────────────────────────────────
 # Imports
@@ -31,7 +31,7 @@ from utils import inject_css, init_session, check_backend
 from languages import t, LANGUAGE_NAMES
 
 # ─────────────────────────────────────────────
-# Session + Styling
+# Initialize
 # ─────────────────────────────────────────────
 init_session()
 inject_css()
@@ -39,7 +39,7 @@ inject_css()
 # ─────────────────────────────────────────────
 # LOGIN GATE
 # ─────────────────────────────────────────────
-if not st.session_state.logged_in:
+if not st.session_state.get("logged_in", False):
     from _pages.login import show_login
     show_login()
     st.stop()
@@ -74,47 +74,47 @@ with st.sidebar:
 
     st.markdown("##### Navigation")
 
-    def nav_btn(label: str, page: str):
-        if st.button(label, key=f"nav_{page}", use_container_width=True):
+    def nav(label: str, page: str):
+        if st.button(label, use_container_width=True):
             st.session_state.active_page = page
             st.rerun()
 
-    nav_btn(f"📊  {t('nav_dashboard')}",     "dashboard")
-    nav_btn(f"🔍  {t('nav_classify')}",      "classify")
-    nav_btn(f"📢  {t('nav_complaints')}",    "complaints")
-    nav_btn(f"🏆  {t('nav_rewards')}",       "rewards")
-    nav_btn(f"🔔  {t('nav_notifications')}", "notifications")
-    nav_btn(f"👤  {t('nav_profile')}",       "profile")
+    nav(f"📊  {t('nav_dashboard')}", "dashboard")
+    nav(f"🔍  {t('nav_classify')}", "classify")
+    nav(f"📢  {t('nav_complaints')}", "complaints")
+    nav(f"🏆  {t('nav_rewards')}", "rewards")
+    nav(f"🔔  {t('nav_notifications')}", "notifications")
+    nav(f"👤  {t('nav_profile')}", "profile")
 
     if role in ("driver", "admin"):
         st.markdown("---")
-        nav_btn(f"🗺️  {t('nav_route')}", "route")
+        nav(f"🗺️  {t('nav_route')}", "route")
 
     if role == "admin":
-        nav_btn(f"⚙️  {t('nav_admin')}", "admin")
+        nav(f"⚙️  {t('nav_admin')}", "admin")
 
     st.markdown("---")
 
-    # Language Selector
-    lang_options = list(LANGUAGE_NAMES.keys())
-    current_lang = st.session_state.get("language", "en")
-    sel_idx = lang_options.index(current_lang) if current_lang in lang_options else 0
+    # Language
+    langs = list(LANGUAGE_NAMES.keys())
+    current = st.session_state.get("language", "en")
+    idx = langs.index(current) if current in langs else 0
 
-    chosen_lang = st.selectbox(
+    selected = st.selectbox(
         f"🌐 {t('lbl_language')}",
-        options=lang_options,
+        options=langs,
         format_func=lambda x: LANGUAGE_NAMES[x],
-        index=sel_idx,
+        index=idx,
     )
 
-    if chosen_lang != current_lang:
-        st.session_state.language = chosen_lang
+    if selected != current:
+        st.session_state.language = selected
         st.rerun()
 
-    # Dark Mode Toggle
+    # Dark mode
     dark = st.toggle(
         f"🌙 {t('lbl_dark_mode')}",
-        value=st.session_state.dark_mode
+        value=st.session_state.get("dark_mode", False),
     )
 
     if dark != st.session_state.dark_mode:
@@ -128,16 +128,16 @@ with st.sidebar:
             del st.session_state[key]
         st.rerun()
 
-    with st.expander("System Status", expanded=False):
+    with st.expander("System Status"):
         if check_backend():
-            st.success("Backend ✅ Online")
+            st.success("Backend Online")
         else:
-            st.warning("Backend ⚠️ Offline")
+            st.warning("Backend Offline")
 
 # ═════════════════════════════════════════════
 # PAGE ROUTING
 # ═════════════════════════════════════════════
-page = st.session_state.active_page
+page = st.session_state.get("active_page", "dashboard")
 role = st.session_state.role
 
 if page == "dashboard":
